@@ -355,12 +355,13 @@ function triggerUpload(){}
 async function handleFile(input){
   const file = input.files[0]; if(!file) return;
   analyzing=true;
-  const zone = document.getElementById('upload-zone');
   document.getElementById('upload-inner').innerHTML = `<div style="display:flex;justify-content:center;padding:20px 0"><div class="spinner"></div></div><div class="analyzing-text" style="text-align:center">📸 正在辨識食物中…</div>`;
 
   try{
-    const base64 = await toBase64(file);
-    const imageUrl = URL.createObjectURL(file);
+    // Use FileReader for both base64 and preview — works in PWA mode on iOS
+    const dataUrl = await toDataURL(file);
+    const base64 = dataUrl.split(',')[1];
+    const imageUrl = dataUrl; // use dataURL as preview instead of createObjectURL
     document.getElementById('upload-inner').innerHTML = `<div style="display:flex;justify-content:center;padding:20px 0"><div class="spinner"></div></div><div class="analyzing-text" style="text-align:center">🤖 AI 分析熱量中…</div>`;
     const result = await analyzeFood(base64);
     if(!result.name||result.kcal===undefined) throw new Error('parse fail');
@@ -372,17 +373,19 @@ async function handleFile(input){
     renderRing();
     showUploadSuccess(`✅ ${result.name} 已加入！(${result.kcal} kcal)`);
   }catch(e){
-    showUploadSuccess('❌ 分析失敗，請重試或手動輸入');
-    setTimeout(resetUpload,4000);
+    console.error('Analysis error:', e);
+    const msg = e?.message||String(e);
+    showUploadSuccess('❌ 失敗：' + msg.slice(0,80));
+    setTimeout(resetUpload,5000);
   }finally{
     analyzing=false;
     input.value='';
   }
 }
-function toBase64(file){
+function toDataURL(file){
   return new Promise((res,rej)=>{
     const r=new FileReader();
-    r.onload=e=>res(e.target.result.split(',')[1]);
+    r.onload=e=>res(e.target.result);
     r.onerror=rej;
     r.readAsDataURL(file);
   });
