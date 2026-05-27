@@ -57,6 +57,7 @@ button { cursor: pointer; }
 .upload-title { font-weight: 700; font-size: 15px; }
 .upload-sub { font-size: 13px; color: var(--sub); margin-top: 4px; }
 .upload-note { margin-top: 10px; font-size: 13px; color: var(--accent); font-weight: 600; }
+.upload-note.error { color: var(--danger); }
 .spinner { width: 32px; height: 32px; border: 3px solid var(--accent); border-top-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
 .analyzing-text { color: var(--accent); font-weight: 700; font-size: 15px; }
 .manual-btn { width: 100%; margin-top: 10px; padding: 11px 0; border-radius: 12px; border: 1px solid var(--border); background: var(--card); color: var(--sub); font-size: 14px; font-weight: 600; }
@@ -86,7 +87,7 @@ button { cursor: pointer; }
 .empty-text { font-size: 14px; }
 .empty-sub { font-size: 12px; margin-top: 6px; }
 .history-card { background: var(--panel); border: 1px solid var(--border); border-radius: 16px; padding: 16px 18px; margin-bottom: 10px; cursor: pointer; transition: all 0.2s; }
-.history-card.open { border-color: rgba(74,222,128,0.4); }
+.history-card.open { border-color: rgba(251,146,60,0.4); }
 .history-row { display: flex; align-items: center; justify-content: space-between; }
 .history-date { font-weight: 700; font-size: 15px; }
 .history-count { font-size: 12px; color: var(--sub); margin-top: 2px; }
@@ -107,13 +108,16 @@ button { cursor: pointer; }
 .goal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
 .goal-btn { padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--card); color: var(--sub); font-size: 12px; font-weight: 600; transition: all 0.2s; text-align: left; }
 .goal-btn.active { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
-.bmr-result { background: var(--accent-dim); border: 1px solid rgba(74,222,128,0.27); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; }
+.bmr-result { background: var(--accent-dim); border: 1px solid rgba(251,146,60,0.27); border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; font-size: 13px; }
 .bmr-result-title { color: var(--sub); margin-bottom: 4px; }
 .bmr-result-main { color: var(--accent); font-weight: 700; font-size: 15px; }
 .bmr-result-target { color: var(--text); margin-top: 4px; }
 .bmr-result-target span { color: var(--warn); font-weight: 700; }
 .save-btn { width: 100%; padding: 14px 0; border-radius: 12px; background: var(--accent); color: #1a0a00; font-weight: 800; font-size: 16px; border: none; }
 .settings-btn { background: var(--card); border: 1px solid var(--border); color: var(--sub); border-radius: 10px; padding: 8px 14px; font-size: 13px; font-weight: 600; }
+.api-key-notice { background: var(--danger-dim); border: 1px solid var(--danger); border-radius: 10px; padding: 10px 14px; margin-top: 12px; font-size: 12px; color: var(--danger); display: none; }
+.section-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0 16px; }
+.api-hint { font-size: 11px; color: var(--muted); margin-top: 5px; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -146,6 +150,9 @@ button { cursor: pointer; }
           <div class="upload-sub">AI 自動辨識並計算熱量</div>
           <div class="upload-note" id="upload-note" style="display:none"></div>
         </div>
+      </div>
+      <div class="api-key-notice" id="api-key-notice">
+        ⚠️ 尚未設定 API Key，請點擊「⚙️ 設定」入入填寫 Anthropic API Key 才能使用 AI 辨識功能。
       </div>
       <button class="manual-btn" onclick="toggleManual()">✏️ 手動輸入食物</button>
       <div class="manual-form slide-in" id="manual-form" style="display:none">
@@ -210,19 +217,29 @@ button { cursor: pointer; }
       <div class="bmr-result-main" id="bmr-main"></div>
       <div class="bmr-result-target" id="bmr-target"></div>
     </div>
-    <button class="save-btn" onclick="saveProfile()">儲存設定 ✓</button>
+    <hr class="section-divider">
+    <div class="field-label">🔑 Anthropic API Key</div>
+    <input class="field-input" id="p-apikey" type="password" placeholder="sk-ant-..." style="margin-top:6px">
+    <div class="api-hint">
+      到 <strong>console.anthropic.com</strong> 申請免費 API Key。<br>
+      Key 僅儲存在您的手機本地，不會上傳到任何伺服器。
+    </div>
+    <button class="save-btn" style="margin-top:16px" onclick="saveProfile()">儲存設定 ✓</button>
   </div>
 </div>
 <script>
 const MEAL_LABELS = { breakfast:'🌅 早餐', lunch:'☀️ 午餐', dinner:'🌙 晚餐', snack:'🍎 點心' };
 const GOAL_LABELS = { lose_fast:'積極減重 (-25%)', lose:'溫和減重 (-15%)', maintain:'維持體重', gain:'增肌增重 (+15%)' };
 const GOAL_FACTORS = { lose_fast:0.75, lose:0.85, maintain:1.0, gain:1.15 };
+
 let profile = null, logs = {}, currentMeal = 'breakfast', currentTab = 'today';
 let pGender = 'male', pGoal = 'lose', expandedDay = null;
 try { profile = JSON.parse(localStorage.getItem('ctr_profile') || 'null'); } catch{}
 try { logs = JSON.parse(localStorage.getItem('ctr_logs') || '{}'); } catch{}
 function saveLogs(){ localStorage.setItem('ctr_logs', JSON.stringify(logs)); }
 function saveProfileData(){ localStorage.setItem('ctr_profile', JSON.stringify(profile)); }
+function getApiKey(){ return localStorage.getItem('ctr_apikey') || ''; }
+
 function today(){ return new Date().toISOString().slice(0,10); }
 function fmtTime(ts){ return new Date(ts).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit'}); }
 function fmtDate(d){ return new Date(d+'T00:00:00').toLocaleDateString('zh-TW',{month:'long',day:'numeric',weekday:'short'}); }
@@ -235,6 +252,7 @@ function calcBMR(p){
 function calcTarget(bmr,goal){ return bmr? Math.round(bmr*(GOAL_FACTORS[goal]??1)*1.2):null; }
 function dayEntries(d){ return logs[d]||[]; }
 function dayKcal(d){ return dayEntries(d).reduce((s,e)=>s+(e.kcal||0),0); }
+
 function renderRing(){
   const bmr = calcBMR(profile);
   const target = calcTarget(bmr, profile?.goal);
@@ -255,7 +273,7 @@ function renderRing(){
   `;
   const remaining = target? target-eaten:null;
   const statusColor = !target?'#4a5168':eaten>target*1.05?'#f87171':eaten>target*0.9?'#facc15':'#fb923c';
-  const statusText = !target?'設定目標後可看狀態':eaten>target*1.05?'⚠️ 今日已超標':eaten>target*0.9?'🟡 接近目標上限':remaining>0?`還可吃 ${remaining} kcal`:'\u2705 達成目標';
+  const statusText = !target?'設定目標後可看狀態':eaten>target*1.05?'⚠️ 今日已超標':eaten>target*0.9?'🟡 接近目標上限':remaining>0?`還可吃 ${remaining} kcal`:'✅ 達成目標';
   const entries = dayEntries(today());
   const macros = entries.reduce((a,e)=>({protein:a.protein+(e.protein||0),carbs:a.carbs+(e.carbs||0),fat:a.fat+(e.fat||0)}),{protein:0,carbs:0,fat:0});
   let html = '';
@@ -273,14 +291,25 @@ function macroBarHTML(label,val,max,color){
   const pct = max? Math.min(val/max*100,100):0;
   return `<div class="macro-bar"><div class="macro-row"><span>${label}</span><span>${val}g</span></div><div class="macro-track"><div class="macro-fill" style="width:${pct}%;background:${color}"></div></div></div>`;
 }
+
 function renderMealPills(){
   document.getElementById('meal-pills').innerHTML = Object.entries(MEAL_LABELS).map(([k,l])=>
     `<button class="meal-pill ${currentMeal===k?'active':''}" onclick="setMeal('${k}')">${l}</button>`
   ).join('');
 }
 function setMeal(m){ currentMeal=m; renderMealPills(); }
+
 let analyzing = false;
-function triggerUpload(){ if(!analyzing) document.getElementById('file-input').click(); }
+function triggerUpload(){
+  if(!analyzing){
+    if(!getApiKey()){
+      document.getElementById('api-key-notice').style.display='block';
+      return;
+    }
+    document.getElementById('api-key-notice').style.display='none';
+    document.getElementById('file-input').click();
+  }
+}
 async function handleFile(input){
   const file = input.files[0]; if(!file) return;
   analyzing=true;
@@ -300,9 +329,10 @@ async function handleFile(input){
     saveLogs();
     renderToday();
     renderRing();
-    showUploadSuccess(`✅ ${result.name} 已加入！(${result.kcal} kcal)`);
+    showUploadNote(`✅ ${result.name} 已加入！(${result.kcal} kcal)`, false);
   }catch(e){
-    showUploadSuccess('❌ 分析失敗，請重試或手動輸入');
+    console.error(e);
+    showUploadNote('❌ 分析失敗：' + (e.message||'請檢查 API Key 或網路'), true);
     setTimeout(resetUpload,4000);
   }finally{
     analyzing=false;
@@ -317,11 +347,13 @@ function toBase64(file){
     r.readAsDataURL(file);
   });
 }
-function showUploadSuccess(msg){
+function showUploadNote(msg, isError){
   resetUpload();
-  document.getElementById('upload-note').textContent=msg;
-  document.getElementById('upload-note').style.display='block';
-  setTimeout(()=>{ document.getElementById('upload-note').style.display='none'; },3500);
+  const el = document.getElementById('upload-note');
+  el.textContent = msg;
+  el.className = 'upload-note' + (isError ? ' error' : '');
+  el.style.display = 'block';
+  setTimeout(()=>{ el.style.display='none'; }, 4000);
 }
 function resetUpload(){
   const zone=document.getElementById('upload-zone');
@@ -334,25 +366,37 @@ function resetUpload(){
     <div class="upload-note" id="upload-note" style="display:none"></div>`;
 }
 async function analyzeFood(imageBase64){
+  const apiKey = getApiKey();
+  if(!apiKey) throw new Error('請先設定 API Key');
   const prompt = `你是一位專業的熱量師。請分析這張食物照片，估算熱量和營養素。
 請以 JSON 格式回覆（不要加 markdown），格式如下：
 {"name":"食物名稱（繁體中文）","kcal":數字,"protein":數字,"carbs":數字,"fat":數字,"note":"備註"}
 誠實估算，若無法辨識則 kcal 回傳 0 並在 note 說明。`;
   const resp = await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
-    headers:{'Content-Type':'application/json'},
+    headers:{
+      'Content-Type':'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
     body:JSON.stringify({
-      model:'claude-sonnet-4-20250514',max_tokens:1000,
+      model:'claude-opus-4-5',max_tokens:1000,
       messages:[{role:'user',content:[
         {type:'image',source:{type:'base64',media_type:'image/jpeg',data:imageBase64}},
         {type:'text',text:prompt}
       ]}]
     })
   });
+  if(!resp.ok){
+    const err = await resp.json().catch(()=>({}));
+    throw new Error(err.error?.message || 'API 錯誤 ' + resp.status);
+  }
   const data = await resp.json();
   const text = data.content?.find(b=>b.type==='text')?.text??'{}';
   return JSON.parse(text.replace(/```json|```/g,'').trim());
 }
+
 function toggleManual(){
   const f=document.getElementById('manual-form');
   f.style.display = f.style.display==='none'?'block':'none';
@@ -372,6 +416,7 @@ function submitManual(){
   document.getElementById('manual-form').style.display='none';
   renderToday(); renderRing();
 }
+
 function foodCardHTML(entry, day){
   const macrosHtml = (entry.protein||entry.carbs||entry.fat)?
     `<div class="food-macros">${entry.protein?`<span>🥩 蛋白 ${entry.protein}g</span>`:''} ${entry.carbs?`<span>🍚 碳水 ${entry.carbs}g</span>`:''} ${entry.fat?`<span>🧈 脂肪 ${entry.fat}g</span>`:''}</div>`:'';
@@ -412,6 +457,7 @@ function renderToday(){
   html+='</div>';
   el.innerHTML=html;
 }
+
 function renderHistory(){
   const bmr=calcBMR(profile);
   const target=calcTarget(bmr,profile?.goal);
@@ -427,7 +473,7 @@ function renderHistory(){
     const pct=target?Math.min(kcal/target,1.2):0;
     const isToday=day===today();
     const over=target&&kcal>target*1.05;
-    const barColor=over?'#f87171':kcal>target*0.9?'#facc15':'#fb923c';
+    const barColor=over?'#f87171':kcal>(target||0)*0.9?'#facc15':'#fb923c';
     const open=expandedDay===day;
     html+=`<div class="history-card ${open?'open':''}" onclick="toggleDay('${day}')">
       <div class="history-row">
@@ -446,6 +492,7 @@ function renderHistory(){
   el.innerHTML=html;
 }
 function toggleDay(d){ expandedDay=expandedDay===d?null:d; renderHistory(); }
+
 function switchTab(tab){
   currentTab=tab;
   document.getElementById('view-today').style.display=tab==='today'?'block':'none';
@@ -454,6 +501,7 @@ function switchTab(tab){
   document.getElementById('tab-history').className='tab-btn'+(tab==='history'?' active':'');
   if(tab==='history') renderHistory();
 }
+
 function openProfile(){
   if(profile){ pGender=profile.gender||'male'; pGoal=profile.goal||'lose'; }
   renderGoalButtons();
@@ -464,6 +512,9 @@ function openProfile(){
     document.getElementById('p-height').value=profile.height||'';
     document.getElementById('p-weight').value=profile.weight||'';
   }
+  const savedKey = getApiKey();
+  document.getElementById('p-apikey').value = savedKey ? '★'.repeat(8) + savedKey.slice(-4) : '';
+  document.getElementById('p-apikey').placeholder = savedKey ? 'API Key 已設定 ✓' : 'sk-ant-...';
   updateBMRPreview();
   document.getElementById('profile-modal').style.display='flex';
 }
@@ -497,12 +548,19 @@ function saveProfile(){
     height:document.getElementById('p-height').value,
     weight:document.getElementById('p-weight').value};
   saveProfileData();
+  const keyInput = document.getElementById('p-apikey').value.trim();
+  if(keyInput && !keyInput.startsWith('★')){
+    localStorage.setItem('ctr_apikey', keyInput);
+    document.getElementById('api-key-notice').style.display='none';
+  }
   closeProfile();
   renderRing();
 }
+
 renderMealPills();
 renderRing();
 renderToday();
+if(!getApiKey()) document.getElementById('api-key-notice').style.display='block';
 if(!profile) openProfile();
 </script>
 </body>
