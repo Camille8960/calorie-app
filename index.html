@@ -191,31 +191,13 @@
       </div>
 
       <!-- Manual -->
-      <button class="manual-btn" onclick="toggleManual()">✏️ 手動輸入食物</button>
+      <button class="manual-btn" onclick="toggleManual()">✏️ 輸入食物名稱</button>
       <div class="manual-form slide-in" id="manual-form" style="display:none">
-        <div class="manual-grid">
-          <div class="full">
-            <div class="field-label">食物名稱</div>
-            <input class="field-input" id="m-name" placeholder="例：滷肉飯">
-          </div>
-          <div>
-            <div class="field-label">熱量（kcal）*</div>
-            <input class="field-input" id="m-kcal" type="number" placeholder="0">
-          </div>
-          <div>
-            <div class="field-label">蛋白質（g）</div>
-            <input class="field-input" id="m-protein" type="number" placeholder="0">
-          </div>
-          <div>
-            <div class="field-label">碳水（g）</div>
-            <input class="field-input" id="m-carbs" type="number" placeholder="0">
-          </div>
-          <div>
-            <div class="field-label">脂肪（g）</div>
-            <input class="field-input" id="m-fat" type="number" placeholder="0">
-          </div>
-        </div>
-        <button class="submit-btn" onclick="submitManual()">新增紀錄</button>
+        <div class="field-label">食物名稱（AI 自動估算熱量）</div>
+        <input class="field-input" id="m-name" placeholder="例：兩顆茶葉蛋、一碗牛肉麵" style="margin-bottom:10px"
+          onkeydown="if(event.key==='Enter')submitManual()">
+        <button class="submit-btn" onclick="submitManual()" id="manual-submit-btn">AI 估算熱量 ✨</button>
+        <div id="manual-status" style="margin-top:8px;font-size:13px;color:var(--accent);font-weight:600;text-align:center;display:none"></div>
       </div>
 
       <!-- Entries -->
@@ -423,13 +405,13 @@ function resetUpload(){
     <div class="upload-note" id="upload-note" style="display:none"></div>`;
 }
 
+const WORKER_URL = 'https://calorie-proxy.twcchen.workers.dev';
+
 async function analyzeFood(imageBase64){
   const prompt = `你是一位專業的營養師。請分析這張食物照片，估算熱量和營養素。
 請以 JSON 格式回覆（不要加 markdown），格式如下：
 {"name":"食物名稱（繁體中文）","kcal":數字,"protein":數字,"carbs":數字,"fat":數字,"note":"備註"}
 誠實估算，若無法辨識則 kcal 回傳 0 並在 note 說明。`;
-  // 請把下面網址換成你的 Cloudflare Worker 網址
-  const WORKER_URL = 'https://calorie-proxy.twcchen.workers.dev';
 
   const resp = await fetch(WORKER_URL,{
     method:'POST',
@@ -452,20 +434,48 @@ function toggleManual(){
   const f=document.getElementById('manual-form');
   f.style.display = f.style.display==='none'?'block':'none';
 }
-function submitManual(){
+async function submitManual(){
   const name=document.getElementById('m-name').value.trim();
-  const kcal=parseInt(document.getElementById('m-kcal').value)||0;
-  if(!name||!kcal) return;
-  const entry={id:Date.now(),ts:Date.now(),meal:currentMeal,name,kcal,
-    protein:parseInt(document.getElementById('m-protein').value)||0,
-    carbs:parseInt(document.getElementById('m-carbs').value)||0,
-    fat:parseInt(document.getElementById('m-fat').value)||0};
-  if(!logs[today()]) logs[today()]=[];
-  logs[today()].push(entry);
-  saveLogs();
-  ['m-name','m-kcal','m-protein','m-carbs','m-fat'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('manual-form').style.display='none';
-  renderToday(); renderRing();
+  if(!name){ alert('請填入食物名稱'); return; }
+
+  const btn=document.getElementById('manual-submit-btn');
+  const status=document.getElementById('manual-status');
+  btn.disabled=true; btn.textContent='AI 估算中…';
+  status.style.display='block'; status.textContent='🤖 正在估算熱量…';
+
+  try{
+    const result = await analyzeFoodByText(name);
+    const entry={id:Date.now(),ts:Date.now(),meal:currentMeal,...result};
+    if(!logs[today()]) logs[today()]=[];
+    logs[today()].push(entry);
+    saveLogs();
+    document.getElementById('m-name').value='';
+    document.getElementById('manual-form').style.display='none';
+    renderToday(); renderRing();
+  }catch(e){
+    status.textContent='❌ 估算失敗，請重試';
+    setTimeout(()=>{ status.style.display='none'; },3000);
+  }finally{
+    btn.disabled=false; btn.textContent='AI 估算熱量 ✨';
+  }
+}
+
+async function analyzeFoodByText(foodName){
+  const prompt = `你是一位專業營養師。請估算「${foodName}」的熱量和營養素。
+請只回傳 JSON，不要加 markdown：
+{"name":"${foodName}","kcal":數字,"protein":數字,"carbs":數字,"fat":數字}`;
+
+  const resp = await fetch(WORKER_URL,{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      model:'claude-sonnet-4-20250514',max_tokens:500,
+      messages:[{role:'user',content:prompt}]
+    })
+  });
+  const data = await resp.json();
+  const text = data.content?.find(b=>b.type==='text')?.text??'{}';
+  return JSON.parse(text.replace(/```json|```/g,'').trim());
 }
 
 // ── Entries ────────────────────────────────────────────────────────────────
